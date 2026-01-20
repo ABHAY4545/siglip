@@ -1,0 +1,8 @@
+__pycache__/
+.ruff_cache/
+.venv/
+.vscode/
+checkpoints/
+logs/
+train_cache_dir/
+val_cache_dir/
