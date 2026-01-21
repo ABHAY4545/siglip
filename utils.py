@@ -5,7 +5,6 @@ from transformers import AutoProcessor, AutoModel
 from model_surgery import model_surgery
 
 model_id = "google/siglip2-base-patch16-256"
-hf_model = AutoModel.from_pretrained(model_id)
 processor = AutoProcessor.from_pretrained(model_id, use_fast=True)
 
 
@@ -73,6 +72,7 @@ def filter_sample(sample, min_size=256):
 
 
 def model_import(device):
+    hf_model = AutoModel.from_pretrained(model_id)
     model = SigLipModel(img_size=256, dropout_rate=0.1).to(device)
     model_surgery(model, hf_model, 12, vision_model=False)
     model.lock_text_tower()

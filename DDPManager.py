@@ -7,6 +7,9 @@ import os
 class DDPManager:
     def __init__(self, backend="nccl"):
         self._initialized = False
+
+        if backend is None:
+            backend = "nccl" if torch.cuda.is_available() else "gloo"
         self.backend = backend
         self.use_ddp = "RANK" in os.environ and "WORLD_SIZE" in os.environ
         self._setup()
