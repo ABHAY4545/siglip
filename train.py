@@ -8,6 +8,7 @@ from functools import partial
 import torch.distributed as dist
 from DDPManager import DDPManager
 from siglip import loss_fn, get_lr
+from torch.cuda.amp import autocast
 from utils import filter_sample, preprocess, save_checkpoint, model_import
 
 
@@ -15,22 +16,22 @@ TRAIN_URL = "https://huggingface.co/datasets/pixparse/cc12m-wds/resolve/main/cc1
 VAL_URL = "https://huggingface.co/datasets/pixparse/cc12m-wds/resolve/main/cc12m-train-{2171..2172}.tar"
 
 PREPROCESS_BATCH_SIZE = 8192
-GLOBAL_BATCH_SIZE = 512
-TRAIN_BATCH_SIZE = 64
-EVAL_BATCH_SIZE = 64
+GLOBAL_BATCH_SIZE = 4096
+TRAIN_BATCH_SIZE = 512
+EVAL_BATCH_SIZE = 1024
 
 NUM_SAMPLES = 10240000
 NUM_EPOCHS = 2
-MAX_LR = 1e-4
+MAX_LR = 3e-4
 MIN_LR = MAX_LR * 0.1
 WEIGHT_DECAY = 0.05
-WARMUP_RATIO = 0.15
+WARMUP_RATIO = 0.10
 
-TRAIN_NUM_WORKERS = 1
+TRAIN_NUM_WORKERS = 16
 EVAL_NUM_WORKERS = 2
-SHUFFLE_BUFFER = 1000
-LOADER_SHUFFLE_BUFFER = 100
-PREFETCH_FACTOR = 2
+SHUFFLE_BUFFER = 8192
+LOADER_SHUFFLE_BUFFER = 2048
+PREFETCH_FACTOR = 3
 
 VAL_EPOCH_SIZE = 8
 CHECKPOINT_INTERVAL = 250
@@ -67,8 +68,10 @@ def train(
             input_ids = batch["input_ids"].to(device, non_blocking=True)
             attention_mask = batch["attention_mask"].to(device, non_blocking=True)
 
-            logits = model(input_ids, attention_mask, pixel_values)
-            loss = loss_fn(logits) / grad_accum_steps
+            with autocast(device_type='cuda', dtype=torch.bfloat16): # type: ignore
+
+                logits = model(input_ids, attention_mask, pixel_values)
+                loss = loss_fn(logits) / grad_accum_steps
             loss.backward()
 
             if not update_step:
@@ -137,6 +140,12 @@ def main():
         else ("mps" if torch.backends.mps.is_available() else "cpu")
     )
     os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
+    if device == "cuda":
+        if not torch.cuda.is_bf16_supported():
+            print("WARNING: BF16 not supported on this GPU, falling back to FP32")
+        else:
+            print("BF16 supported and will be used for training")
 
     torch.manual_seed(SEED)
     if device == "cuda":
